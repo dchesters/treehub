@@ -1,4 +1,5 @@
 
+##########################################################################################################################################
 # 
 # 
 # 
@@ -10,8 +11,16 @@
 # 	Herein are a load of patterns with the primary aim of reading taxon names from terminal IDs
 # 	(otherwise barely scratching the surface of processing tasks),
 # 	and gives some idea of the processing that should have been conducted by treehub in order to present usable data.
-# 	If you want this script to do anything, 
-#		then you will need to give the paths to the relevent files on your system, see first set of variables just below.
+#	The processes conducted herein are more specific to the aim of reading taxonomic names,
+#	these have overlap, but are not exactly the same as what would be done for more general processing of phylogeny data. 
+#	an obvious example being many terminal components are deleted after being read.
+#
+# 	In the attempts to read terminal information herein, you can already see the beginings of a required set of processing steps,
+# 	For instance 
+#	1) the treehub quoting convention needs to be read before the standard single quoting convention,
+# 	as this would be a much more reliable way to read the latter.
+# 	2) And all quoted terminal IDs need to be processed before more general terminal IDs,
+# 	as the former contains characters that would confound the latter.
 # 
 # 
 # 
@@ -21,6 +30,8 @@
 # 2026-03-29: 	Started.
 # 2026-07-09: 	After manuscript review, conducting further developments to give more detailed description of TreeHub.
 # 2026-07-15:	Incorporated attempted taxonomic mapping of taxon-like words parsed from terminal IDs
+# 2026-07-30:	Read also synonym genus names from Catalogue of Life
+# 		Changes to invokation, readme written.
 # 
 # 
 # 
@@ -28,22 +39,21 @@
 # 
 # 
 # 
-# 
-# 
-#############################################################################################################################
+##########################################################################################################################################
 
 
+$catalogue_of_life_path 	= $ARGV[0];
+$ncbi_tax_database_path 	= $ARGV[1];
+$treehub_treejson_path 		= $ARGV[2];
+$treehub_paperjson_path 	= $ARGV[3];
+$treehub_newick_path 		= $ARGV[4];
 
 
-
-# in following 2 variables give paths to the taxonomic databases
-$ncbi_tax_database_path 	= "/home/douglas/databases/NCBI_taxonomy/2023Jan/names.dmp";
-$catalogue_of_life_path 	= "/home/douglas/databases/Taxonomy/Catalogue_of_Life/38ec8244-5887-4f0f-b923-56f8cb015c19/dataset-9923.txt";
-
-
-$treehub_treejson_path 		= "/home/douglas/databases/TreeHub/TreeHub_json-zip_20250331/tree.json";
-$treehub_paperjson_path 	= "/home/douglas/databases/TreeHub/TreeHub_json-zip_20250331/paper.json";
-$treehub_newick_path 		= "/home/douglas/databases/TreeHub/TreeHub_json-zip_20250331/tree/out/";
+# $ncbi_tax_database_path 	= "/home/douglas/databases/NCBI_taxonomy/2023Jan/names.dmp";
+# $catalogue_of_life_path 	= "/home/douglas/databases/Taxonomy/Catalogue_of_Life/38ec8244-5887-4f0f-b923-56f8cb015c19/dataset-9923.txt";
+# $treehub_treejson_path 	= "/home/douglas/databases/TreeHub/TreeHub_json-zip_20250331/tree.json";
+# $treehub_paperjson_path 	= "/home/douglas/databases/TreeHub/TreeHub_json-zip_20250331/paper.json";
+# $treehub_newick_path 		= "/home/douglas/databases/TreeHub/TreeHub_json-zip_20250331/tree/out/";
 
 
 # probably not needed:
@@ -343,9 +353,15 @@ sub parse_treefiles
 {
 print "\nreading treefiles only\n";
 
-# Folder containing tree files is ./TreeHub_json-zip_20250331/tree/out/
-@file_list = glob './TreeHub_json-zip_20250331/tree/out/*';
+# full path (folder containing tree files) will be something like:
+# /home/douglas/databases/TreeHub/test1/TreeHub_json-zip_20250331/tree/out/
+# assuming user has followed bash commands, then path should be simplified to 
+# ./tree/out/
+
+my $treehub_files = $treehub_newick_path."*";print "scanning for treehub files at $treehub_files\n";
+@file_list = glob("$treehub_files"); # cannot use ls here due to too many files
 print "total file count:", scalar @file_list , "\n";
+
 foreach my $file(@file_list)
 	{
 	my $filename_only = $file;if($filename_only =~ s/.+\/(T\d+\.nwk)/$1/){}else{die "\nerror 357, unexpected path:$file \n"};
@@ -2133,11 +2149,44 @@ print "\nchecking for catalogue of life at path given:$catalogue_of_life_path\n"
 open(COL_D , $catalogue_of_life_path) || print "\nwarning, cant open the catalogue of life taxonomic database.\n";
 while (my $line = <COL_D>)
 	{
-	#                        Melozone Reichenbach, 1850 [genus]
-	if($line =~ /^\s+([A-Z][a-z]{2,30})\s.+\[genus\]/)
+	
+	# opting to read genus names only, in my opinion the only neccessary taxonomic component of terminal IDs,
+	# includes current canon, synonyms, extinct,
+	# excludes names prefixed with '?', uncommon, presumably uncertain name,
+	# and excludes names prefixed with 'x', rare, and i dont know what it denotes
+
+	if($line =~ /^\s+([A-Z][a-z]{2,30})\s.+\[genus\]/) 			# Melozone Reichenbach, 1850 [genus]
 		{
 		my $COL_genus = $1;$taxnames{$COL_genus}=1;$COL_counter++;
+
+		}elsif($line =~ /^\s+\=([A-Z][a-z]{2,30})\s.+\[genus\]/) 	# =Petauristophthirus Eichler, 1949 [genus]
+		{
+		my $COL_genus = $1;$taxnames{$COL_genus}=1;$COL_counter++;
+		
+		}elsif($line =~ /^\s+([A-Z][a-z]{2,30})\s+\[genus\]/) 		#  Halocrusticida [genus]
+		{
+		my $COL_genus = $1;$taxnames{$COL_genus}=1;$COL_counter++;
+
+		}elsif($line =~ /^\s+\†([A-Z][a-z]{2,30})\s.+\[genus\]/) 	# †Favusella Michael, 1973 [genus]
+		{
+		my $COL_genus = $1;$taxnames{$COL_genus}=1;$COL_counter++;
+
+		}elsif($line =~ /^\s+\†([A-Z][a-z]{2,30})\s+\[genus\]/) 	#  †Baiera [genus]
+		{
+		my $COL_genus = $1;$taxnames{$COL_genus}=1;$COL_counter++;
+
+		}elsif($line =~ /^\s+\=([A-Z][a-z]{2,30})\s+\[genus\]/) 	#    =Pomachromus [genus]
+		{
+		my $COL_genus = $1;$taxnames{$COL_genus}=1;$COL_counter++;
+
+		}elsif($line =~ /\[genus\]/)
+		{
+	#	print "not parsed:$line\n";
+		# not many, mostly names preceeded with question mark, preseumably uncertian name
 		};
+
+
+
 	};
 print "Catalogue of Life counter:$COL_counter\n";
 };
